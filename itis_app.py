@@ -125,7 +125,7 @@ MEDS_IV = {
 # -------------------------
 ORAL_CYC = {
     "dose1": 75.0, "dose2": 25000.0,
-    "A1": 0.58, "A2": 0.90,
+    "A1": 0.60, "A2": 0.90,
     "d1": 70.0, "d2": 90.0,
     "vanish1": 90.0, "vanish2": 115.0,
     "course_min": 75.0,
@@ -356,4 +356,5 @@ st.metric("Estimated Cumulative ITIS", f"{cumulative_itis:.4f}")
 
 if any_errors:
     st.warning("One or more inputs were invalid. Some medications/courses may have been excluded.")
+
 
