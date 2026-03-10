@@ -90,7 +90,7 @@ def clip_course_total(course_total, upper):
     return min(float(course_total), float(upper))
 
 # ============================================================
-# Azathioprine helpers
+# Oral medication helpers
 # ============================================================
 def calculate_linear_score(dose, min_dose, max_dose, min_score, max_score):
     if dose <= min_dose:
@@ -167,7 +167,6 @@ ORAL_CYC = {
 }
 
 AZATHIOPRINE = {
-    # Active treatment linear daily-dose model
     "dose1": 25,
     "dose2": 250,
     "A1": 0.15,
@@ -186,6 +185,183 @@ AZATHIOPRINE = {
     "default_step": 25,
 }
 
+MYCOPHENOLATE_MOFETIL = {
+    "dose1": 125,
+    "dose2": 4000,
+    "A1": 0.25,
+    "A2": 0.75,
+    "d1": 5.0,
+    "d2": 7.0,
+    "vanish1": 7.0,
+    "vanish2": 9.0,
+    "min_score": 0.25,
+    "max_score": 0.75,
+    "daily_dose_units": "Daily dose units",
+    "daily_min": 125,
+    "daily_max": 4000,
+    "max_n_courses": 20,
+    "default_dose": 125,
+    "default_step": 125,
+}
+
+# ============================================================
+# Reusable oral medication section
+# ============================================================
+def render_decay_oral_medication_section(
+    med_name,
+    cfg,
+    received_key,
+    n_courses_key,
+    start_prefix,
+    stop_prefix,
+    stop_disabled_prefix,
+    not_stopped_prefix,
+    dose_prefix,
+):
+    global any_errors, overall_components, encounter_date
+
+    st.subheader(med_name)
+
+    med_received = st.radio(
+        f"Received {med_name}?",
+        options=["No", "Yes"],
+        index=0,
+        horizontal=True,
+        key=received_key,
+    )
+
+    if med_received == "Yes":
+        st.info(
+            "If the medication has not been stopped yet, set the Stop date to the Encounter/Current date "
+            "to estimate the current approximate score."
+        )
+
+        n_courses = st.number_input(
+            f"How many {med_name.lower()} courses were given?",
+            min_value=1,
+            max_value=int(cfg["max_n_courses"]),
+            value=1,
+            step=1,
+            key=n_courses_key,
+        )
+
+        med_course_itises = []
+
+        for i in range(int(n_courses)):
+            st.markdown(f"**Course #{i+1}**")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                med_start = st.date_input(
+                    f"Start date #{i+1} (DD/MM/YYYY)",
+                    value=encounter_date,
+                    max_value=encounter_date,
+                    format="DD/MM/YYYY",
+                    key=f"{start_prefix}_{i}",
+                )
+
+            med_not_stopped = st.checkbox(
+                f"Course #{i+1} not stopped yet (use Encounter date as Stop date)",
+                value=False,
+                key=f"{not_stopped_prefix}_{i}",
+            )
+
+            with c2:
+                if med_not_stopped:
+                    med_stop = encounter_date
+                    st.date_input(
+                        f"Stop date #{i+1} (DD/MM/YYYY)",
+                        value=med_stop,
+                        disabled=True,
+                        format="DD/MM/YYYY",
+                        key=f"{stop_disabled_prefix}_{i}",
+                    )
+                else:
+                    med_stop = st.date_input(
+                        f"Stop date #{i+1} (DD/MM/YYYY)",
+                        value=encounter_date,
+                        max_value=encounter_date,
+                        format="DD/MM/YYYY",
+                        key=f"{stop_prefix}_{i}",
+                    )
+
+            med_daily_dose = st.number_input(
+                f"Daily dose #{i+1} ({cfg['daily_dose_units']})",
+                min_value=0,
+                value=int(cfg["default_dose"]),
+                step=int(cfg["default_step"]),
+                format="%d",
+                key=f"{dose_prefix}_{i}",
+            )
+
+            med_invalid = False
+            if is_future_date(med_start) or is_after_encounter(med_start, encounter_date):
+                st.error(
+                    f"Course #{i+1}: Start date must be on or before the encounter/current date and cannot be a future date. "
+                    f"This {med_name.lower()} course is excluded."
+                )
+                any_errors = True
+                med_invalid = True
+
+            if is_future_date(med_stop) or is_after_encounter(med_stop, encounter_date):
+                st.error(
+                    f"Course #{i+1}: Stop date must be on or before the encounter/current date and cannot be a future date. "
+                    f"This {med_name.lower()} course is excluded."
+                )
+                any_errors = True
+                med_invalid = True
+
+            if med_stop < med_start:
+                st.error(
+                    f"Course #{i+1}: Stop date must be on or after start date. "
+                    f"This {med_name.lower()} course is excluded."
+                )
+                any_errors = True
+                med_invalid = True
+
+            if int(med_daily_dose) < cfg["daily_min"] or int(med_daily_dose) > cfg["daily_max"]:
+                st.error(
+                    f"Course #{i+1}: Daily dose = {int(med_daily_dose)} is outside the allowed range "
+                    f"({cfg['daily_min']}–{cfg['daily_max']}). "
+                    f"This {med_name.lower()} course is excluded."
+                )
+                any_errors = True
+                med_invalid = True
+
+            if not med_invalid:
+                # Because stop date max_value is encounter_date, encounter_date <= stop_date
+                # is effectively equality for active treatment.
+                if encounter_date <= med_stop:
+                    med_itis = calculate_linear_score(
+                        int(med_daily_dose),
+                        cfg["dose1"],
+                        cfg["dose2"],
+                        cfg["min_score"],
+                        cfg["max_score"],
+                    )
+                else:
+                    interval_since_stop = (encounter_date - med_stop).days
+                    if interval_since_stop < 0:
+                        interval_since_stop = 0
+
+                    med_itis = compute_itis(
+                        interval_since_stop,
+                        int(med_daily_dose),
+                        cfg,
+                    )
+
+                med_course_itises.append(med_itis)
+
+            if i < int(n_courses) - 1:
+                st.divider()
+
+        if med_course_itises:
+            overall_components.append(combine_itis(med_course_itises))
+        else:
+            st.warning(f"No valid {med_name} courses were included.")
+    else:
+        st.caption("Not included (not received).")
+
 # ============================================================
 # UI
 # ============================================================
@@ -201,7 +377,6 @@ encounter_date = st.date_input(
     key="global_encounter_date",
 )
 
-# Encounter/current date must not be in the future
 if is_future_date(encounter_date):
     st.error("Encounter / current date cannot be in the future. Please select today or an earlier date.")
     st.stop()
@@ -240,7 +415,7 @@ for med_name, cfg in MEDS_IV.items():
     )
 
     entries = []
-    invalid_found = False  # if any invalid input -> exclude whole medication
+    invalid_found = False
 
     for i in range(int(n_doses)):
         c1, c2 = st.columns(2)
@@ -262,7 +437,6 @@ for med_name, cfg in MEDS_IV.items():
                 key=f"{med_name}_date_{i}",
             )
 
-        # ---- Date validation (hard) ----
         if is_future_date(iv_date) or is_after_encounter(iv_date, encounter_date):
             st.error(
                 f"{med_name} IV date #{i+1} must be on or before the encounter/current date and cannot be a future date."
@@ -270,7 +444,6 @@ for med_name, cfg in MEDS_IV.items():
             any_errors = True
             invalid_found = True
 
-        # ---- Per-dose validation (hard) ----
         if not dose_is_valid(int(dose), cfg["dose1"], cfg["dose2"]):
             st.error(
                 f"{med_name} Dose #{i+1} = {int(dose)} is outside the allowed range "
@@ -281,13 +454,11 @@ for med_name, cfg in MEDS_IV.items():
 
         entries.append((iv_date, int(dose)))
 
-    # If any invalid per-dose or date -> exclude entire medication
     if invalid_found:
         st.warning(f"{med_name} was excluded due to invalid dose(s) and/or date(s).")
         st.divider()
         continue
 
-    # Sort + course grouping
     entries.sort(key=lambda x: x[0])
     courses = group_into_courses(entries, window_days=int(cfg["course_window_days"]))
 
@@ -443,7 +614,7 @@ if oral_received == "Yes":
 
         if not oral_invalid:
             effective_stop = min(oral_stop, encounter_date)
-            days_on_drug = (effective_stop - oral_start).days  # exclusive
+            days_on_drug = (effective_stop - oral_start).days
             course_total = float(days_on_drug) * float(int(daily_dose))
 
             if course_total < ORAL_CYC["course_min"]:
@@ -482,151 +653,35 @@ st.divider()
 
 # ============================================================
 # Azathioprine
-#   Multiple courses supported
-#   Same start/stop style as oral cyclophosphamide
-#   If encounter_date <= stop_date: use linear daily-dose ITIS
-#   If encounter_date > stop_date: use sigmoid decay from stop date
 # ============================================================
-st.subheader("Azathioprine")
-
-aza_received = st.radio(
-    "Received Azathioprine?",
-    options=["No", "Yes"],
-    index=0,
-    horizontal=True,
-    key="aza_received",
+render_decay_oral_medication_section(
+    med_name="Azathioprine",
+    cfg=AZATHIOPRINE,
+    received_key="aza_received",
+    n_courses_key="aza_n_courses",
+    start_prefix="aza_start",
+    stop_prefix="aza_stop",
+    stop_disabled_prefix="aza_stop_disabled",
+    not_stopped_prefix="aza_not_stopped",
+    dose_prefix="aza_daily_dose",
 )
 
-if aza_received == "Yes":
-    st.info(
-        "If the medication has not been stopped yet, set the Stop date to the Encounter/Current date "
-        "to estimate the current approximate score."
-    )
+st.divider()
 
-    n_aza_courses = st.number_input(
-        "How many azathioprine courses were given?",
-        min_value=1,
-        max_value=int(AZATHIOPRINE["max_n_courses"]),
-        value=1,
-        step=1,
-        key="aza_n_courses",
-    )
-
-    aza_course_itises = []
-
-    for i in range(int(n_aza_courses)):
-        st.markdown(f"**Course #{i+1}**")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            aza_start = st.date_input(
-                f"Start date #{i+1} (DD/MM/YYYY)",
-                value=encounter_date,
-                max_value=encounter_date,
-                format="DD/MM/YYYY",
-                key=f"aza_start_{i}",
-            )
-
-        aza_not_stopped = st.checkbox(
-            f"Course #{i+1} not stopped yet (use Encounter date as Stop date)",
-            value=False,
-            key=f"aza_not_stopped_{i}",
-        )
-
-        with c2:
-            if aza_not_stopped:
-                aza_stop = encounter_date
-                st.date_input(
-                    f"Stop date #{i+1} (DD/MM/YYYY)",
-                    value=aza_stop,
-                    disabled=True,
-                    format="DD/MM/YYYY",
-                    key=f"aza_stop_disabled_{i}",
-                )
-            else:
-                aza_stop = st.date_input(
-                    f"Stop date #{i+1} (DD/MM/YYYY)",
-                    value=encounter_date,
-                    max_value=encounter_date,
-                    format="DD/MM/YYYY",
-                    key=f"aza_stop_{i}",
-                )
-
-        aza_daily_dose = st.number_input(
-            f"Daily dose #{i+1} ({AZATHIOPRINE['daily_dose_units']})",
-            min_value=0,
-            value=int(AZATHIOPRINE["default_dose"]),
-            step=int(AZATHIOPRINE["default_step"]),
-            format="%d",
-            key=f"aza_daily_dose_{i}",
-        )
-
-        aza_invalid = False
-        if is_future_date(aza_start) or is_after_encounter(aza_start, encounter_date):
-            st.error(
-                f"Course #{i+1}: Start date must be on or before the encounter/current date and cannot be a future date. "
-                "This azathioprine course is excluded."
-            )
-            any_errors = True
-            aza_invalid = True
-
-        if is_future_date(aza_stop) or is_after_encounter(aza_stop, encounter_date):
-            st.error(
-                f"Course #{i+1}: Stop date must be on or before the encounter/current date and cannot be a future date. "
-                "This azathioprine course is excluded."
-            )
-            any_errors = True
-            aza_invalid = True
-
-        if aza_stop < aza_start:
-            st.error(
-                f"Course #{i+1}: Stop date must be on or after start date. "
-                "This azathioprine course is excluded."
-            )
-            any_errors = True
-            aza_invalid = True
-
-        if int(aza_daily_dose) < AZATHIOPRINE["daily_min"] or int(aza_daily_dose) > AZATHIOPRINE["daily_max"]:
-            st.error(
-                f"Course #{i+1}: Daily dose = {int(aza_daily_dose)} is outside the allowed range "
-                f"({AZATHIOPRINE['daily_min']}–{AZATHIOPRINE['daily_max']}). "
-                "This azathioprine course is excluded."
-            )
-            any_errors = True
-            aza_invalid = True
-
-        if not aza_invalid:
-            # Because max_value=encounter_date, encounter_date <= aza_stop is effectively equality.
-            if encounter_date <= aza_stop:
-                aza_itis = calculate_linear_score(
-                    int(aza_daily_dose),
-                    AZATHIOPRINE["dose1"],
-                    AZATHIOPRINE["dose2"],
-                    AZATHIOPRINE["min_score"],
-                    AZATHIOPRINE["max_score"],
-                )
-            else:
-                interval_since_stop = (encounter_date - aza_stop).days
-                if interval_since_stop < 0:
-                    interval_since_stop = 0
-
-                aza_itis = compute_itis(
-                    interval_since_stop,
-                    int(aza_daily_dose),
-                    AZATHIOPRINE,
-                )
-
-            aza_course_itises.append(aza_itis)
-
-        if i < int(n_aza_courses) - 1:
-            st.divider()
-
-    if aza_course_itises:
-        overall_components.append(combine_itis(aza_course_itises))
-    else:
-        st.warning("No valid Azathioprine courses were included.")
-else:
-    st.caption("Not included (not received).")
+# ============================================================
+# Mycophenolate mofetil
+# ============================================================
+render_decay_oral_medication_section(
+    med_name="Mycophenolate mofetil",
+    cfg=MYCOPHENOLATE_MOFETIL,
+    received_key="mmf_received",
+    n_courses_key="mmf_n_courses",
+    start_prefix="mmf_start",
+    stop_prefix="mmf_stop",
+    stop_disabled_prefix="mmf_stop_disabled",
+    not_stopped_prefix="mmf_not_stopped",
+    dose_prefix="mmf_daily_dose",
+)
 
 # ============================================================
 # Final result
