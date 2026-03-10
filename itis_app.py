@@ -143,6 +143,7 @@ ORAL_CYC = {
     # If you also want to validate daily dose, set these:
     "daily_min": 0.0,
     "daily_max": 1000.0,  # adjust if you want a limit; otherwise set very high
+    "max_n_courses": 20,
 }
 
 # ============================================================
@@ -259,7 +260,7 @@ for med_name, cfg in MEDS_IV.items():
 
         # ---- Clip course total to upper cap (NO error) ----
         course_dose_used = clip_course_total(course_sum_dose, cfg["course_cap_dose"])
-# (silently cap course total; no message shown)
+        # (silently cap course total; no message shown)
 
         # ---- Minimum course dose rule (hard) ----
         if course_dose_used < float(cfg["course_min_dose"]):
@@ -290,6 +291,7 @@ for med_name, cfg in MEDS_IV.items():
 
 # ============================================================
 # Oral Cyclophosphamide
+#   Multiple courses supported
 #   Course total above upper => CLIP
 #   Date rules: start/stop <= encounter_date, no future
 # ============================================================
@@ -309,97 +311,131 @@ if oral_received == "Yes":
         "to estimate the current approximate score."
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        oral_start = st.date_input(
-            "Start date (DD/MM/YYYY)",
-            value=encounter_date,
-            max_value=encounter_date,
-            key="oral_cyc_start",
-        )
-
-    not_stopped = st.checkbox(
-        "Medication not stopped yet (use Encounter date as Stop date)",
-        value=False,
-        key="oral_cyc_not_stopped",
+    n_oral_courses = st.number_input(
+        "How many oral cyclophosphamide courses were given?",
+        min_value=1,
+        max_value=int(ORAL_CYC["max_n_courses"]),
+        value=1,
+        step=1,
+        key="oral_cyc_n_courses",
     )
 
-    with c2:
-        if not_stopped:
-            oral_stop = encounter_date
-            st.date_input(
-                "Stop date (DD/MM/YYYY)",
-                value=oral_stop,
-                disabled=True,
-                key="oral_cyc_stop_disabled",
-            )
-        else:
-            oral_stop = st.date_input(
-                "Stop date (DD/MM/YYYY)",
+    oral_course_itises = []
+
+    for i in range(int(n_oral_courses)):
+        st.markdown(f"**Course #{i+1}**")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            oral_start = st.date_input(
+                f"Start date #{i+1} (DD/MM/YYYY)",
                 value=encounter_date,
                 max_value=encounter_date,
-                key="oral_cyc_stop",
+                key=f"oral_cyc_start_{i}",
             )
 
-    daily_dose = st.number_input(
-        f"Daily dose ({ORAL_CYC['daily_dose_units']})",
-        min_value=0.0,
-        value=75.0,
-        step=25.0,
-        key="oral_cyc_daily_dose",
-    )
-
-    # Hard date validation
-    oral_invalid = False
-    if is_future_date(oral_start) or is_after_encounter(oral_start, encounter_date):
-        st.error("Start date must be on or before the encounter/current date and cannot be a future date. Oral cyclophosphamide is excluded.")
-        any_errors = True
-        oral_invalid = True
-
-    if is_future_date(oral_stop) or is_after_encounter(oral_stop, encounter_date):
-        st.error("Stop date must be on or before the encounter/current date and cannot be a future date. Oral cyclophosphamide is excluded.")
-        any_errors = True
-        oral_invalid = True
-
-    if oral_stop < oral_start:
-        st.error("Stop date must be on or after start date. Oral cyclophosphamide is excluded.")
-        any_errors = True
-        oral_invalid = True
-
-    # Optional: daily dose validity (adjust limits as you like)
-    if daily_dose < ORAL_CYC["daily_min"] or daily_dose > ORAL_CYC["daily_max"]:
-        st.error(
-            f"Daily dose = {daily_dose:.0f} is outside the allowed range "
-            f"({ORAL_CYC['daily_min']:.0f}–{ORAL_CYC['daily_max']:.0f}). Oral cyclophosphamide is excluded."
+        not_stopped = st.checkbox(
+            f"Course #{i+1} not stopped yet (use Encounter date as Stop date)",
+            value=False,
+            key=f"oral_cyc_not_stopped_{i}",
         )
-        any_errors = True
-        oral_invalid = True
 
-    if not oral_invalid:
-        effective_stop = min(oral_stop, encounter_date)
-        days_on_drug = (effective_stop - oral_start).days  # exclusive
-
-        course_total = float(days_on_drug) * float(daily_dose)
-
-        if course_total < ORAL_CYC["course_min"]:
-            st.error(
-                f"Oral cyclophosphamide course total is {course_total:.0f}, which is <{ORAL_CYC['course_min']:.0f}. "
-                "This course is excluded."
-            )
-            any_errors = True
-        else:
-            course_total_used = clip_course_total(course_total, ORAL_CYC["course_max"])
-            if course_total > ORAL_CYC["course_max"]:
-                st.info(
-                    f"Oral cyclophosphamide course_total (before cap) = {course_total:.0f}. "
-                    f"Using capped course_total = {course_total_used:.0f}."
+        with c2:
+            if not_stopped:
+                oral_stop = encounter_date
+                st.date_input(
+                    f"Stop date #{i+1} (DD/MM/YYYY)",
+                    value=oral_stop,
+                    disabled=True,
+                    key=f"oral_cyc_stop_disabled_{i}",
+                )
+            else:
+                oral_stop = st.date_input(
+                    f"Stop date #{i+1} (DD/MM/YYYY)",
+                    value=encounter_date,
+                    max_value=encounter_date,
+                    key=f"oral_cyc_stop_{i}",
                 )
 
-            interval_since_stop = (encounter_date - oral_stop).days
-            if interval_since_stop < 0:
-                interval_since_stop = 0
+        daily_dose = st.number_input(
+            f"Daily dose #{i+1} ({ORAL_CYC['daily_dose_units']})",
+            min_value=0.0,
+            value=75.0,
+            step=25.0,
+            key=f"oral_cyc_daily_dose_{i}",
+        )
 
-            overall_components.append(compute_itis(interval_since_stop, course_total_used, ORAL_CYC))
+        # Hard date validation
+        oral_invalid = False
+        if is_future_date(oral_start) or is_after_encounter(oral_start, encounter_date):
+            st.error(
+                f"Course #{i+1}: Start date must be on or before the encounter/current date and cannot be a future date. "
+                "This oral cyclophosphamide course is excluded."
+            )
+            any_errors = True
+            oral_invalid = True
+
+        if is_future_date(oral_stop) or is_after_encounter(oral_stop, encounter_date):
+            st.error(
+                f"Course #{i+1}: Stop date must be on or before the encounter/current date and cannot be a future date. "
+                "This oral cyclophosphamide course is excluded."
+            )
+            any_errors = True
+            oral_invalid = True
+
+        if oral_stop < oral_start:
+            st.error(
+                f"Course #{i+1}: Stop date must be on or after start date. "
+                "This oral cyclophosphamide course is excluded."
+            )
+            any_errors = True
+            oral_invalid = True
+
+        # Optional: daily dose validity (adjust limits as you like)
+        if daily_dose < ORAL_CYC["daily_min"] or daily_dose > ORAL_CYC["daily_max"]:
+            st.error(
+                f"Course #{i+1}: Daily dose = {daily_dose:.0f} is outside the allowed range "
+                f"({ORAL_CYC['daily_min']:.0f}–{ORAL_CYC['daily_max']:.0f}). "
+                "This oral cyclophosphamide course is excluded."
+            )
+            any_errors = True
+            oral_invalid = True
+
+        if not oral_invalid:
+            effective_stop = min(oral_stop, encounter_date)
+            days_on_drug = (effective_stop - oral_start).days  # exclusive
+
+            course_total = float(days_on_drug) * float(daily_dose)
+
+            if course_total < ORAL_CYC["course_min"]:
+                st.error(
+                    f"Course #{i+1}: Oral cyclophosphamide course total is {course_total:.0f}, "
+                    f"which is <{ORAL_CYC['course_min']:.0f}. This course is excluded."
+                )
+                any_errors = True
+            else:
+                course_total_used = clip_course_total(course_total, ORAL_CYC["course_max"])
+                if course_total > ORAL_CYC["course_max"]:
+                    st.info(
+                        f"Course #{i+1}: Oral cyclophosphamide course_total (before cap) = {course_total:.0f}. "
+                        f"Using capped course_total = {course_total_used:.0f}."
+                    )
+
+                interval_since_stop = (encounter_date - oral_stop).days
+                if interval_since_stop < 0:
+                    interval_since_stop = 0
+
+                oral_course_itises.append(
+                    compute_itis(interval_since_stop, course_total_used, ORAL_CYC)
+                )
+
+        if i < int(n_oral_courses) - 1:
+            st.divider()
+
+    if oral_course_itises:
+        overall_components.append(combine_itis(oral_course_itises))
+    else:
+        st.warning("No valid Oral Cyclophosphamide courses were included.")
 else:
     st.caption("Not included (not received).")
 
@@ -411,4 +447,3 @@ st.metric("Estimated Cumulative ITIS", f"{cumulative_itis:.4f}")
 
 if any_errors:
     st.warning("One or more inputs were invalid. Some medications/courses may have been excluded.")
-
