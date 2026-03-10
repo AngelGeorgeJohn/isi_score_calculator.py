@@ -3,6 +3,11 @@ import numpy as np
 from datetime import date
 
 # ============================================================
+# Page config
+# ============================================================
+st.set_page_config(page_title="ITIS Calculator", layout="centered")
+
+# ============================================================
 # Core model helpers
 # ============================================================
 def sigmoid_curve(x, A, n, d):
@@ -98,70 +103,73 @@ def calculate_linear_score(dose, min_dose, max_dose, min_score, max_score):
         )
 
 # ============================================================
+# Display helpers
+# ============================================================
+def date_display(d):
+    return d.strftime("%d/%m/%Y")
+
+# ============================================================
 # Medication configs
-#   NOTE: dose1/dose2 define VALID per-dose range AND model calibration range.
-#   Per-dose outside [dose1, dose2] -> ERROR + medication excluded
-#   Course total above upper -> clipped to upper (no error)
 # ============================================================
 MEDS_IV = {
     "Methylprednisolone": {
-        "dose1": 250.0, "dose2": 3000.0,
+        "dose1": 250, "dose2": 3000,
         "A1": 0.40, "A2": 0.80,
         "d1": 15.0, "d2": 21.0,
         "vanish1": 21.0, "vanish2": 30.0,
         "units": "Dose units",
         "course_window_days": 30,
-        "course_cap_dose": 3000.0,
-        "course_min_dose": 250.0,
+        "course_cap_dose": 3000,
+        "course_min_dose": 250,
         "max_n_doses": 20,
-        "default_step": 50.0,
-        "default_dose": 250.0,
+        "default_step": 50,
+        "default_dose": 250,
     },
     "Rituximab": {
-        "dose1": 500.0, "dose2": 2000.0,
+        "dose1": 500, "dose2": 2000,
         "A1": 0.70, "A2": 0.85,
         "d1": 160.0, "d2": 200.0,
         "vanish1": 240.0, "vanish2": 300.0,
         "units": "Dose units",
         "course_window_days": 60,
-        "course_cap_dose": 2000.0,
-        "course_min_dose": 500.0,
+        "course_cap_dose": 2000,
+        "course_min_dose": 500,
         "max_n_doses": 20,
-        "default_step": 100.0,
-        "default_dose": 500.0,
+        "default_step": 100,
+        "default_dose": 500,
     },
     "Cyclophosphamide (IV)": {
-        "dose1": 150.0, "dose2": 8000.0,
+        "dose1": 150, "dose2": 8000,
         "A1": 0.60, "A2": 0.90,
         "d1": 40.0, "d2": 80.0,
         "vanish1": 58.0, "vanish2": 110.0,
         "units": "Dose units",
         "course_window_days": 180,
-        "course_cap_dose": 8000.0,
-        "course_min_dose": 150.0,
+        "course_cap_dose": 8000,
+        "course_min_dose": 150,
         "max_n_doses": 30,
-        "default_step": 50.0,
-        "default_dose": 150.0,
+        "default_step": 50,
+        "default_dose": 150,
     },
 }
 
 ORAL_CYC = {
-    "dose1": 75.0, "dose2": 25000.0,  # course_total model range
+    "dose1": 75, "dose2": 25000,  # course_total model range
     "A1": 0.60, "A2": 0.90,
     "d1": 70.0, "d2": 90.0,
     "vanish1": 90.0, "vanish2": 115.0,
-    "course_min": 75.0,
-    "course_max": 25000.0,
+    "course_min": 75,
+    "course_max": 25000,
     "daily_dose_units": "Daily dose units",
-    "daily_min": 0.0,
-    "daily_max": 1000.0,
+    "daily_min": 0,
+    "daily_max": 1000,
     "max_n_courses": 20,
 }
 
 AZATHIOPRINE = {
     # Active treatment linear daily-dose model
-    "dose1": 25.0,
-    "dose2": 250.0,
+    "dose1": 25,
+    "dose2": 250,
     "A1": 0.15,
     "A2": 0.60,
     "d1": 8.0,
@@ -171,11 +179,11 @@ AZATHIOPRINE = {
     "min_score": 0.15,
     "max_score": 0.60,
     "daily_dose_units": "Daily dose units",
-    "daily_min": 25.0,
-    "daily_max": 250.0,
+    "daily_min": 25,
+    "daily_max": 250,
     "max_n_courses": 20,
-    "default_dose": 25.0,
-    "default_step": 25.0,
+    "default_dose": 25,
+    "default_step": 25,
 }
 
 # ============================================================
@@ -184,9 +192,12 @@ AZATHIOPRINE = {
 st.title("Immunosuppressive Therapy Intensity Score (ITIS)")
 
 st.subheader("Encounter / Current Date")
+st.caption("Please enter/select dates in DD/MM/YYYY format.")
+
 encounter_date = st.date_input(
     "Date of encounter / current date (DD/MM/YYYY)",
     value=date.today(),
+    format="DD/MM/YYYY",
     key="global_encounter_date",
 )
 
@@ -236,9 +247,10 @@ for med_name, cfg in MEDS_IV.items():
         with c1:
             dose = st.number_input(
                 f"Dose #{i+1} ({cfg['units']})",
-                min_value=0.0,
-                value=float(cfg["default_dose"]),
-                step=float(cfg["default_step"]),
+                min_value=0,
+                value=int(cfg["default_dose"]),
+                step=int(cfg["default_step"]),
+                format="%d",
                 key=f"{med_name}_dose_{i}",
             )
         with c2:
@@ -246,6 +258,7 @@ for med_name, cfg in MEDS_IV.items():
                 f"IV date #{i+1} (DD/MM/YYYY)",
                 value=encounter_date,
                 max_value=encounter_date,
+                format="DD/MM/YYYY",
                 key=f"{med_name}_date_{i}",
             )
 
@@ -258,15 +271,15 @@ for med_name, cfg in MEDS_IV.items():
             invalid_found = True
 
         # ---- Per-dose validation (hard) ----
-        if not dose_is_valid(dose, cfg["dose1"], cfg["dose2"]):
+        if not dose_is_valid(int(dose), cfg["dose1"], cfg["dose2"]):
             st.error(
-                f"{med_name} Dose #{i+1} = {dose:.0f} is outside the allowed range "
-                f"({cfg['dose1']:.0f}–{cfg['dose2']:.0f}). {med_name} will be excluded."
+                f"{med_name} Dose #{i+1} = {int(dose)} is outside the allowed range "
+                f"({cfg['dose1']}–{cfg['dose2']}). {med_name} will be excluded."
             )
             any_errors = True
             invalid_found = True
 
-        entries.append((iv_date, float(dose)))
+        entries.append((iv_date, int(dose)))
 
     # If any invalid per-dose or date -> exclude entire medication
     if invalid_found:
@@ -282,7 +295,7 @@ for med_name, cfg in MEDS_IV.items():
     for course_start_date, course_sum_dose in courses:
         if is_future_date(course_start_date) or is_after_encounter(course_start_date, encounter_date):
             st.error(
-                f"{med_name} course start date {course_start_date.strftime('%d/%m/%Y')} is invalid (after encounter/current date or future). "
+                f"{med_name} course start date {date_display(course_start_date)} is invalid (after encounter/current date or future). "
                 f"{med_name} is excluded."
             )
             any_errors = True
@@ -293,8 +306,8 @@ for med_name, cfg in MEDS_IV.items():
 
         if course_dose_used < float(cfg["course_min_dose"]):
             st.error(
-                f"{med_name} course starting {course_start_date.strftime('%d/%m/%Y')} has cumulative dose "
-                f"{course_dose_used:.0f} (<{cfg['course_min_dose']:.0f}). This course is excluded."
+                f"{med_name} course starting {date_display(course_start_date)} has cumulative dose "
+                f"{int(course_dose_used)} (<{cfg['course_min_dose']}). This course is excluded."
             )
             any_errors = True
             continue
@@ -302,7 +315,7 @@ for med_name, cfg in MEDS_IV.items():
         days_since = (encounter_date - course_start_date).days
         if days_since < 0:
             st.error(
-                f"Invalid dates for {med_name} course starting {course_start_date.strftime('%d/%m/%Y')}: "
+                f"Invalid dates for {med_name} course starting {date_display(course_start_date)}: "
                 "encounter/current date must be on or after the IV date. This course is excluded."
             )
             any_errors = True
@@ -319,9 +332,6 @@ for med_name, cfg in MEDS_IV.items():
 
 # ============================================================
 # Oral Cyclophosphamide
-#   Multiple courses supported
-#   Course total above upper => CLIP
-#   Date rules: start/stop <= encounter_date, no future
 # ============================================================
 st.subheader("Cyclophosphamide (Oral)")
 
@@ -359,6 +369,7 @@ if oral_received == "Yes":
                 f"Start date #{i+1} (DD/MM/YYYY)",
                 value=encounter_date,
                 max_value=encounter_date,
+                format="DD/MM/YYYY",
                 key=f"oral_cyc_start_{i}",
             )
 
@@ -375,6 +386,7 @@ if oral_received == "Yes":
                     f"Stop date #{i+1} (DD/MM/YYYY)",
                     value=oral_stop,
                     disabled=True,
+                    format="DD/MM/YYYY",
                     key=f"oral_cyc_stop_disabled_{i}",
                 )
             else:
@@ -382,14 +394,16 @@ if oral_received == "Yes":
                     f"Stop date #{i+1} (DD/MM/YYYY)",
                     value=encounter_date,
                     max_value=encounter_date,
+                    format="DD/MM/YYYY",
                     key=f"oral_cyc_stop_{i}",
                 )
 
         daily_dose = st.number_input(
             f"Daily dose #{i+1} ({ORAL_CYC['daily_dose_units']})",
-            min_value=0.0,
-            value=75.0,
-            step=25.0,
+            min_value=0,
+            value=75,
+            step=25,
+            format="%d",
             key=f"oral_cyc_daily_dose_{i}",
         )
 
@@ -418,10 +432,10 @@ if oral_received == "Yes":
             any_errors = True
             oral_invalid = True
 
-        if daily_dose < ORAL_CYC["daily_min"] or daily_dose > ORAL_CYC["daily_max"]:
+        if int(daily_dose) < ORAL_CYC["daily_min"] or int(daily_dose) > ORAL_CYC["daily_max"]:
             st.error(
-                f"Course #{i+1}: Daily dose = {daily_dose:.0f} is outside the allowed range "
-                f"({ORAL_CYC['daily_min']:.0f}–{ORAL_CYC['daily_max']:.0f}). "
+                f"Course #{i+1}: Daily dose = {int(daily_dose)} is outside the allowed range "
+                f"({ORAL_CYC['daily_min']}–{ORAL_CYC['daily_max']}). "
                 "This oral cyclophosphamide course is excluded."
             )
             any_errors = True
@@ -430,20 +444,20 @@ if oral_received == "Yes":
         if not oral_invalid:
             effective_stop = min(oral_stop, encounter_date)
             days_on_drug = (effective_stop - oral_start).days  # exclusive
-            course_total = float(days_on_drug) * float(daily_dose)
+            course_total = float(days_on_drug) * float(int(daily_dose))
 
             if course_total < ORAL_CYC["course_min"]:
                 st.error(
-                    f"Course #{i+1}: Oral cyclophosphamide course total is {course_total:.0f}, "
-                    f"which is <{ORAL_CYC['course_min']:.0f}. This course is excluded."
+                    f"Course #{i+1}: Oral cyclophosphamide course total is {int(course_total)}, "
+                    f"which is <{ORAL_CYC['course_min']}. This course is excluded."
                 )
                 any_errors = True
             else:
                 course_total_used = clip_course_total(course_total, ORAL_CYC["course_max"])
                 if course_total > ORAL_CYC["course_max"]:
                     st.info(
-                        f"Course #{i+1}: Oral cyclophosphamide course_total (before cap) = {course_total:.0f}. "
-                        f"Using capped course_total = {course_total_used:.0f}."
+                        f"Course #{i+1}: Oral cyclophosphamide course_total (before cap) = {int(course_total)}. "
+                        f"Using capped course_total = {int(course_total_used)}."
                     )
 
                 interval_since_stop = (encounter_date - oral_stop).days
@@ -509,6 +523,7 @@ if aza_received == "Yes":
                 f"Start date #{i+1} (DD/MM/YYYY)",
                 value=encounter_date,
                 max_value=encounter_date,
+                format="DD/MM/YYYY",
                 key=f"aza_start_{i}",
             )
 
@@ -525,6 +540,7 @@ if aza_received == "Yes":
                     f"Stop date #{i+1} (DD/MM/YYYY)",
                     value=aza_stop,
                     disabled=True,
+                    format="DD/MM/YYYY",
                     key=f"aza_stop_disabled_{i}",
                 )
             else:
@@ -532,14 +548,16 @@ if aza_received == "Yes":
                     f"Stop date #{i+1} (DD/MM/YYYY)",
                     value=encounter_date,
                     max_value=encounter_date,
+                    format="DD/MM/YYYY",
                     key=f"aza_stop_{i}",
                 )
 
         aza_daily_dose = st.number_input(
             f"Daily dose #{i+1} ({AZATHIOPRINE['daily_dose_units']})",
-            min_value=0.0,
-            value=float(AZATHIOPRINE["default_dose"]),
-            step=float(AZATHIOPRINE["default_step"]),
+            min_value=0,
+            value=int(AZATHIOPRINE["default_dose"]),
+            step=int(AZATHIOPRINE["default_step"]),
+            format="%d",
             key=f"aza_daily_dose_{i}",
         )
 
@@ -568,10 +586,10 @@ if aza_received == "Yes":
             any_errors = True
             aza_invalid = True
 
-        if aza_daily_dose < AZATHIOPRINE["daily_min"] or aza_daily_dose > AZATHIOPRINE["daily_max"]:
+        if int(aza_daily_dose) < AZATHIOPRINE["daily_min"] or int(aza_daily_dose) > AZATHIOPRINE["daily_max"]:
             st.error(
-                f"Course #{i+1}: Daily dose = {aza_daily_dose:.0f} is outside the allowed range "
-                f"({AZATHIOPRINE['daily_min']:.0f}–{AZATHIOPRINE['daily_max']:.0f}). "
+                f"Course #{i+1}: Daily dose = {int(aza_daily_dose)} is outside the allowed range "
+                f"({AZATHIOPRINE['daily_min']}–{AZATHIOPRINE['daily_max']}). "
                 "This azathioprine course is excluded."
             )
             any_errors = True
@@ -581,7 +599,7 @@ if aza_received == "Yes":
             # Because max_value=encounter_date, encounter_date <= aza_stop is effectively equality.
             if encounter_date <= aza_stop:
                 aza_itis = calculate_linear_score(
-                    aza_daily_dose,
+                    int(aza_daily_dose),
                     AZATHIOPRINE["dose1"],
                     AZATHIOPRINE["dose2"],
                     AZATHIOPRINE["min_score"],
@@ -594,7 +612,7 @@ if aza_received == "Yes":
 
                 aza_itis = compute_itis(
                     interval_since_stop,
-                    aza_daily_dose,
+                    int(aza_daily_dose),
                     AZATHIOPRINE,
                 )
 
