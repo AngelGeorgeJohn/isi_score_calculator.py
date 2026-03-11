@@ -56,8 +56,13 @@ def combine_itis(itis_values):
 def group_into_courses(entries, window_days):
     """
     entries: list[(iv_date, dose)] sorted by iv_date
-    Course rule: include doses while (dose_date - course_start_date) <= window_days
-    Returns list[(course_start_date, course_total_dose)]
+
+    Course rule:
+    - include doses while (dose_date - course_start_date) <= window_days
+    - cumulative course dose = sum of all doses in the course
+    - course reference date = LAST dose date in that course
+
+    Returns list[(course_last_date, course_total_dose)]
     """
     if not entries:
         return []
@@ -66,18 +71,21 @@ def group_into_courses(entries, window_days):
 
     courses = []
     course_start = entries[0][0]
+    course_last = entries[0][0]
     course_sum = entries[0][1]
 
     for dte, dse in entries[1:]:
         span = (dte - course_start).days
         if span <= window_days:
             course_sum += dse
+            course_last = dte
         else:
-            courses.append((course_start, course_sum))
+            courses.append((course_last, course_sum))
             course_start = dte
+            course_last = dte
             course_sum = dse
 
-    courses.append((course_start, course_sum))
+    courses.append((course_last, course_sum))
     return courses
 
 # ============================================================
@@ -451,8 +459,8 @@ def calculate_all_results():
         courses = group_into_courses(entries, window_days=int(cfg["course_window_days"]))
 
         med_course_itises = []
-        for course_start_date, course_sum_dose in courses:
-            if is_future_date(course_start_date) or is_after_encounter(course_start_date, encounter_date):
+        for course_last_date, course_sum_dose in courses:
+            if is_future_date(course_last_date) or is_after_encounter(course_last_date, encounter_date):
                 any_errors = True
                 med_course_itises = []
                 break
@@ -463,10 +471,12 @@ def calculate_all_results():
                 any_errors = True
                 continue
 
-            days_since = (encounter_date - course_start_date).days
+            # Use LAST dose date as IV reference date
+            days_since = (encounter_date - course_last_date).days
+
+            # Replace negative interval with zero
             if days_since < 0:
-                any_errors = True
-                continue
+                days_since = 0
 
             med_course_itises.append(compute_itis(days_since, course_dose_used, cfg))
 
