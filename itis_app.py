@@ -224,7 +224,7 @@ def apply_cd19_adjustment_for_rituximab(days_since_iv, iv_date, cd19_value, cd19
 
     interval_test_from_iv = (cd19_test_date - iv_date).days
 
-    # Ignore biologically inconsistent case where test predates IV
+    # Ignore case where test predates IV
     if interval_test_from_iv < 0:
         return days_since_iv, False
 
@@ -238,7 +238,7 @@ def apply_cd19_adjustment_for_rituximab(days_since_iv, iv_date, cd19_value, cd19
             return 0, False
         return 30, False
 
-    # 0 < CD19 < 10 -> apply standard algorithm (no change)
+    # 0 < CD19 < 10 -> standard algorithm
     return days_since_iv, False
 
 # ============================================================
@@ -1023,10 +1023,10 @@ elif st.session_state.show_result_page and st.session_state.result_payload is no
         st.write("No medications were entered.")
 
     if result["lymphocyte_tested"] == "Yes" and not result["lymphocyte_applied"]:
-        st.info("Lymphocyte-based dose adjustment was not applied because the lymphocyte test date did not match the encounter date, or the lymphocyte count was invalid/missing.")
+        st.info("Lymphocyte-based dose adjustment was not applied because the lymphocyte test date did not match the encounter date, or the lymphocyte count was invalid or missing.")
 
     if result["any_errors"]:
-        st.warning("One or more inputs were invalid. Some medications/courses may have been excluded.")
+        st.warning("One or more inputs were invalid. Some medications or courses may have been excluded.")
 
     c1, c2 = st.columns(2)
 
@@ -1050,24 +1050,28 @@ else:
     st.subheader("Patient details")
     st.caption("Please enter/select dates in DD/MM/YYYY format.")
 
-    st.date_input(
+    dob_input = st.date_input(
         "Date of birth (DD/MM/YYYY)",
-        value=date(1980, 1, 1),
+        value=st.session_state.get("date_of_birth", date(1980, 1, 1)),
         min_value=date(1900, 1, 1),
         max_value=date.today(),
         format="DD/MM/YYYY",
-        key="date_of_birth",
     )
 
-    st.date_input(
+    encounter_input = st.date_input(
         "Date of encounter / current date (DD/MM/YYYY)",
-        value=date.today(),
+        value=st.session_state.get("global_encounter_date", date.today()),
+        min_value=date(1900, 1, 1),
+        max_value=date.today(),
         format="DD/MM/YYYY",
-        key="global_encounter_date",
     )
 
-    dob = st.session_state["date_of_birth"]
-    encounter_date = st.session_state["global_encounter_date"]
+    # Explicitly store latest values so summary/result always uses the chosen dates
+    st.session_state["date_of_birth"] = dob_input
+    st.session_state["global_encounter_date"] = encounter_input
+
+    dob = dob_input
+    encounter_date = encounter_input
 
     if is_future_date(encounter_date):
         st.error("Encounter / current date cannot be in the future. Please select today or an earlier date.")
@@ -1097,7 +1101,7 @@ else:
         with c1:
             st.date_input(
                 "Date of test (DD/MM/YYYY)",
-                value=encounter_date,
+                value=st.session_state.get("lymphocyte_test_date", encounter_date),
                 max_value=encounter_date,
                 format="DD/MM/YYYY",
                 key="lymphocyte_test_date",
@@ -1106,7 +1110,7 @@ else:
             st.number_input(
                 "Lymphocyte count (×10⁹/L)",
                 min_value=0.0,
-                value=1.20,
+                value=float(st.session_state.get("lymphocyte_count", 1.20)),
                 step=0.1,
                 format="%.2f",
                 key="lymphocyte_count",
@@ -1128,7 +1132,7 @@ else:
         with c1:
             st.date_input(
                 "CD19 test date (DD/MM/YYYY)",
-                value=encounter_date,
+                value=st.session_state.get("cd19_test_date", encounter_date),
                 max_value=encounter_date,
                 format="DD/MM/YYYY",
                 key="cd19_test_date",
@@ -1137,7 +1141,7 @@ else:
             st.number_input(
                 "CD19 value",
                 min_value=0.0,
-                value=0.0,
+                value=float(st.session_state.get("cd19_value", 0.0)),
                 step=0.1,
                 format="%.2f",
                 key="cd19_value",
@@ -1168,7 +1172,7 @@ else:
             "How many IV doses were given?",
             min_value=1,
             max_value=int(cfg["max_n_doses"]),
-            value=1,
+            value=int(st.session_state.get(f"{med_name}_n_doses", 1)),
             step=1,
             key=f"{med_name}_n_doses",
         )
@@ -1179,7 +1183,7 @@ else:
                 st.number_input(
                     f"Dose #{i+1} ({cfg['units']})",
                     min_value=0,
-                    value=int(cfg["default_dose"]),
+                    value=int(st.session_state.get(f"{med_name}_dose_{i}", cfg["default_dose"])),
                     step=int(cfg["default_step"]),
                     format="%d",
                     key=f"{med_name}_dose_{i}",
@@ -1187,7 +1191,7 @@ else:
             with c2:
                 st.date_input(
                     f"IV date #{i+1} (DD/MM/YYYY)",
-                    value=encounter_date,
+                    value=st.session_state.get(f"{med_name}_date_{i}", encounter_date),
                     max_value=encounter_date,
                     format="DD/MM/YYYY",
                     key=f"{med_name}_date_{i}",
@@ -1218,7 +1222,7 @@ else:
             "How many oral cyclophosphamide courses were given?",
             min_value=1,
             max_value=int(ORAL_CYC["max_n_courses"]),
-            value=1,
+            value=int(st.session_state.get("oral_cyc_n_courses", 1)),
             step=1,
             key="oral_cyc_n_courses",
         )
@@ -1230,7 +1234,7 @@ else:
             with c1:
                 st.date_input(
                     f"Start date #{i+1} (DD/MM/YYYY)",
-                    value=encounter_date,
+                    value=st.session_state.get(f"oral_cyc_start_{i}", encounter_date),
                     max_value=encounter_date,
                     format="DD/MM/YYYY",
                     key=f"oral_cyc_start_{i}",
@@ -1238,7 +1242,7 @@ else:
 
             st.checkbox(
                 f"Course #{i+1} not stopped yet (use Encounter date as Stop date)",
-                value=False,
+                value=bool(st.session_state.get(f"oral_cyc_not_stopped_{i}", False)),
                 key=f"oral_cyc_not_stopped_{i}",
             )
 
@@ -1254,7 +1258,7 @@ else:
                 else:
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=encounter_date,
+                        value=st.session_state.get(f"oral_cyc_stop_{i}", encounter_date),
                         max_value=encounter_date,
                         format="DD/MM/YYYY",
                         key=f"oral_cyc_stop_{i}",
@@ -1263,7 +1267,7 @@ else:
             st.number_input(
                 f"Daily dose #{i+1} ({ORAL_CYC['daily_dose_units']})",
                 min_value=0,
-                value=75,
+                value=int(st.session_state.get(f"oral_cyc_daily_dose_{i}", 75)),
                 step=25,
                 format="%d",
                 key=f"oral_cyc_daily_dose_{i}",
@@ -1326,6 +1330,10 @@ else:
 
     with c2:
         if st.button("Submit", type="primary"):
+            # Make sure the latest chosen DOB and encounter date are saved
+            st.session_state["date_of_birth"] = dob
+            st.session_state["global_encounter_date"] = encounter_date
+
             result_payload = calculate_all_results()
             st.session_state.result_payload = result_payload
             st.session_state.show_result_page = True
