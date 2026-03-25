@@ -1070,7 +1070,7 @@ if st.session_state.show_intro_page:
     st.write("• Date of IV (for IV medications)")
     st.write("• Start date and stop date(s) for oral medications")
     st.write("• Units must be entered as mg")
-
+    st.write("• Medication dose (enter the daily dose for oral medications)")
     st.divider()
 
     if st.button("Continue", type="primary"):
