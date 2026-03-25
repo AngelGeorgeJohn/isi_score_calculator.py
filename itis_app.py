@@ -912,7 +912,7 @@ if st.session_state.show_intro_page:
     st.subheader("Information required to calculate ITIS")
     st.write("• Date of birth")
     st.write("• Encounter / current date")
-    st.write("• Optional lymphocyte count")
+    st.write("• Lymphocyte count (optional)")
     st.write("• Medication")
     st.write("• Date of IV (for IV medications)")
     st.write("• Start date and stop date(s) for oral medications")
