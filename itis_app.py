@@ -1086,7 +1086,7 @@ elif st.session_state.show_result_page and st.session_state.result_payload is no
     st.title("Estimated Cumulative ITIS Result")
     st.caption(f"Encounter / Current Date: {date_display(result['encounter_date'])}")
 
-    st.metric("Estimated Cumulative ITIS", f"≈ {result['cumulative_itis']:.2f}")
+    st.metric("Estimated Cumulative ITIS", f"= {result['cumulative_itis']:.2f}")
 
     st.subheader("Summary")
     if result.get("date_of_birth") is not None:
