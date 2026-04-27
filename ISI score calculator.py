@@ -166,21 +166,19 @@ def apply_absolute_age_adjustment(dose, age_years):
 # ============================================================
 def has_valid_lymphocyte_result(lymph_tested, lymph_test_date, encounter_date, lymph_value):
     """
-    Basic lymphocyte validity:
+    Lymphocyte validity:
     - lymphocyte tested == Yes
     - test date present
-    - test date is not after encounter date
+    - test date is not in the future
     - lymphocyte value is valid
 
-    This is used for IV cyclophosphamide, where the lymphocyte date can be any
-    valid date on/before the encounter date, provided it falls within the
-    dose-specific IV cyclophosphamide vanish window from the IV dose date.
+    The lymphocyte test date may be before OR after the encounter date.
     """
     if lymph_tested != "Yes":
         return False
-    if lymph_test_date is None or encounter_date is None:
+    if lymph_test_date is None:
         return False
-    if lymph_test_date > encounter_date:
+    if is_future_date(lymph_test_date):
         return False
     if lymph_value is None or np.isnan(lymph_value):
         return False
@@ -1275,17 +1273,17 @@ else:
         c1, c2 = st.columns(2)
         with c1:
             lymph_default_date = st.session_state.get("lymphocyte_test_date", encounter_date)
-            if lymph_default_date is None or lymph_default_date > encounter_date:
-                lymph_default_date = encounter_date
+if lymph_default_date is None or lymph_default_date > date.today():
+    lymph_default_date = date.today()
 
-            st.date_input(
-                "Date of test (DD/MM/YYYY)",
-                value=lymph_default_date,
-                min_value=date(1900, 1, 1),
-                max_value=encounter_date,
-                format="DD/MM/YYYY",
-                key="lymphocyte_test_date",
-            )
+st.date_input(
+    "Date of test (DD/MM/YYYY)",
+    value=lymph_default_date,
+    min_value=date(1900, 1, 1),
+    max_value=date.today(),
+    format="DD/MM/YYYY",
+    key="lymphocyte_test_date",
+)
         with c2:
             st.number_input(
                 "Lymphocyte count (×10⁹/L)",
