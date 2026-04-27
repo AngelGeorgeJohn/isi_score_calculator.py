@@ -1295,14 +1295,15 @@ else:
             if lymph_default_date is None or lymph_default_date > date.today():
                 lymph_default_date = date.today()
 
-            st.date_input(
+            lymph_date_input = st.date_input(
                 "Date of test (DD/MM/YYYY)",
                 value=lymph_default_date,
                 min_value=date(1900, 1, 1),
                 max_value=date.today(),
                 format="DD/MM/YYYY",
-                key="lymphocyte_test_date",
+                key="lymphocyte_test_date_widget_v2",
             )
+            st.session_state["lymphocyte_test_date"] = lymph_date_input
 
         with c2:
             st.number_input(
@@ -1334,14 +1335,15 @@ else:
             if cd19_default_date is None or cd19_default_date > date.today():
                 cd19_default_date = date.today()
 
-            st.date_input(
+            cd19_date_input = st.date_input(
                 "CD19 test date (DD/MM/YYYY)",
                 value=cd19_default_date,
                 min_value=date(1900, 1, 1),
                 max_value=date.today(),
                 format="DD/MM/YYYY",
-                key="cd19_test_date",
+                key="cd19_test_date_widget_v2",
             )
+            st.session_state["cd19_test_date"] = cd19_date_input
 
         with c2:
             st.number_input(
