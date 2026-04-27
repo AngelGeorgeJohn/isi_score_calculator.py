@@ -49,7 +49,7 @@ def compute_itis(days_since_iv, dose, cfg):
     return float(np.clip(itis, 0.0, 1.0))
 
 def combine_itis(itis_values):
-    """Cumulative ITIS = 1 - Π(1-ITIS)"""
+    """Cumulative score = 1 - Π(1-score)"""
     prod_term = 1.0
     for x in itis_values:
         prod_term *= (1.0 - x)
@@ -163,8 +163,6 @@ def apply_absolute_age_adjustment(dose, age_years):
 
 # ============================================================
 # Lymphocyte-based dose adjustment helpers
-# Apply ONLY if lymphocyte tested == Yes and test date == encounter date
-# and only AFTER age-based adjustment
 # ============================================================
 def has_valid_lymphocyte_result(lymph_tested, lymph_test_date, encounter_date, lymph_value):
     """
@@ -202,10 +200,10 @@ def should_apply_lymphocyte_adjustment(lymph_tested, lymph_test_date, encounter_
 
 def apply_relative_lymphocyte_adjustment(dose, lymph_value):
     """
-    >1.2                -> Apply algorithm (no extra change)
-    >0.7 to <=1.2       -> Apply algorithm (no extra change)
-    >0.3 to <=0.7       -> Increase dose by 50%
-    <=0.3               -> Increase dose by 100%
+    >1.2                -> no extra change
+    >0.7 to <=1.2       -> no extra change
+    >0.3 to <=0.7       -> increase dose by 50%
+    <=0.3               -> increase dose by 100%
     """
     if dose is None or np.isnan(dose):
         return dose
@@ -221,10 +219,10 @@ def apply_relative_lymphocyte_adjustment(dose, lymph_value):
 
 def apply_absolute_lymphocyte_adjustment(dose, lymph_value):
     """
-    >1.2                -> Apply algorithm (no extra change)
-    >0.7 to <=1.2       -> Apply algorithm (no extra change)
-    >0.3 to <=0.7       -> Add 50 mg
-    <=0.3               -> Add 100 mg
+    >1.2                -> no extra change
+    >0.7 to <=1.2       -> no extra change
+    >0.3 to <=0.7       -> add 50 mg
+    <=0.3               -> add 100 mg
     """
     if dose is None or np.isnan(dose):
         return dose
@@ -266,7 +264,7 @@ def apply_cd19_adjustment_for_rituximab(days_since_iv, iv_date, cd19_value, cd19
     """
     Rules for Rituximab only:
     1. IF CD19 > 0 and <= 10 -> apply algorithm normally (no change)
-    2. IF CD19 > 10 and interval between date of test and IV <= 330 days -> RTX ITIS = 0
+    2. IF CD19 > 10 and interval between date of test and IV <= 330 days -> RTX score = 0
     3. IF CD19 = 0 and time since RTX IV <= 30 days -> reset time since RTX IV to 0
     4. IF CD19 = 0 and time since RTX IV > 30 days and < 300 days -> reset time since RTX IV to 30
     5. IF CD19 = 0 and time since RTX IV >= 300 days -> apply algorithm normally (no change)
@@ -282,13 +280,9 @@ def apply_cd19_adjustment_for_rituximab(days_since_iv, iv_date, cd19_value, cd19
     if interval_test_from_iv < 0:
         return days_since_iv, False
 
-    # CD19 recovery: force rituximab contribution to zero if CD19 is >10
-    # and the CD19 test was within 330 days of the RTX IV/course reference date.
     if cd19_value > 10 and interval_test_from_iv <= 330:
         return None, True
 
-    # CD19 remains fully depleted.
-    # This only modifies the RTX time interval if the encounter is <300 days since RTX.
     if cd19_value == 0:
         if days_since_iv <= 30:
             return 0, False
@@ -543,13 +537,19 @@ def render_decay_oral_medication_section(
 
             c1, c2 = st.columns(2)
             with c1:
+                start_default = st.session_state.get(
+                    f"{start_prefix}_{i}",
+                    st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
+                )
+                encounter_default = st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
+                if start_default is None or start_default > encounter_default:
+                    start_default = encounter_default
+
                 st.date_input(
                     f"Start date #{i+1} (DD/MM/YYYY)",
-                    value=st.session_state.get(
-                        f"{start_prefix}_{i}",
-                        st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
-                    ),
-                    max_value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                    value=start_default,
+                    min_value=date(1900, 1, 1),
+                    max_value=encounter_default,
                     format="DD/MM/YYYY",
                     key=f"{start_prefix}_{i}",
                 )
@@ -561,22 +561,27 @@ def render_decay_oral_medication_section(
             )
 
             with c2:
+                encounter_default = st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
                 if st.session_state[f"{not_stopped_prefix}_{i}"]:
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                        value=encounter_default,
+                        min_value=date(1900, 1, 1),
+                        max_value=encounter_default,
                         disabled=True,
                         format="DD/MM/YYYY",
                         key=f"{stop_disabled_prefix}_{i}",
                     )
                 else:
+                    stop_default = st.session_state.get(f"{stop_prefix}_{i}", encounter_default)
+                    if stop_default is None or stop_default > encounter_default:
+                        stop_default = encounter_default
+
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=st.session_state.get(
-                            f"{stop_prefix}_{i}",
-                            st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
-                        ),
-                        max_value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                        value=stop_default,
+                        min_value=date(1900, 1, 1),
+                        max_value=encounter_default,
                         format="DD/MM/YYYY",
                         key=f"{stop_prefix}_{i}",
                     )
@@ -635,14 +640,18 @@ def render_prednisolone_section():
             st.markdown(f"**Course #{i+1}**")
 
             c1, c2 = st.columns(2)
+            encounter_default = st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
+
             with c1:
+                prd_start_default = st.session_state.get(f"prd_start_{i}", encounter_default)
+                if prd_start_default is None or prd_start_default > encounter_default:
+                    prd_start_default = encounter_default
+
                 st.date_input(
                     f"Start date #{i+1} (DD/MM/YYYY)",
-                    value=st.session_state.get(
-                        f"prd_start_{i}",
-                        st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
-                    ),
-                    max_value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                    value=prd_start_default,
+                    min_value=date(1900, 1, 1),
+                    max_value=encounter_default,
                     format="DD/MM/YYYY",
                     key=f"prd_start_{i}",
                 )
@@ -657,19 +666,23 @@ def render_prednisolone_section():
                 if st.session_state[f"prd_not_stopped_{i}"]:
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                        value=encounter_default,
+                        min_value=date(1900, 1, 1),
+                        max_value=encounter_default,
                         disabled=True,
                         format="DD/MM/YYYY",
                         key=f"prd_stop_disabled_{i}",
                     )
                 else:
+                    prd_stop_default = st.session_state.get(f"prd_stop_{i}", encounter_default)
+                    if prd_stop_default is None or prd_stop_default > encounter_default:
+                        prd_stop_default = encounter_default
+
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=st.session_state.get(
-                            f"prd_stop_{i}",
-                            st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today()
-                        ),
-                        max_value=st.session_state["global_encounter_date"] if "global_encounter_date" in st.session_state else date.today(),
+                        value=prd_stop_default,
+                        min_value=date(1900, 1, 1),
+                        max_value=encounter_default,
                         format="DD/MM/YYYY",
                         key=f"prd_stop_{i}",
                     )
@@ -764,10 +777,6 @@ def calculate_all_results():
 
             if med_name == "Cyclophosphamide (IV)":
                 if lymph_valid_any_date:
-                    # For IV cyclophosphamide, the lymphocyte test can be any valid
-                    # date on/before the encounter date. Apply lymphocyte adjustment
-                    # only if that lymphocyte test date is within this dose's
-                    # dose-specific vanish window from the IV dose date.
                     days_from_iv_to_lymph_test = (lymph_test_date - iv_date).days
                     cyc_vanish_day = calculate_cyc_iv_vanish_day(adjusted_dose)
 
@@ -969,7 +978,7 @@ def calculate_all_results():
                 )
 
                 if encounter_date <= med_stop:
-                    med_itis = calculate_linear_score(
+                    med_score = calculate_linear_score(
                         adjusted_dose,
                         cfg["dose1"],
                         cfg["dose2"],
@@ -980,9 +989,9 @@ def calculate_all_results():
                     interval_since_stop = (encounter_date - med_stop).days
                     if interval_since_stop < 0:
                         interval_since_stop = 0
-                    med_itis = compute_itis(interval_since_stop, adjusted_dose, cfg)
+                    med_score = compute_itis(interval_since_stop, adjusted_dose, cfg)
 
-                med_course_itises.append(med_itis)
+                med_course_itises.append(med_score)
                 med_summary.append(
                     f"course #{i+1}: {date_display(med_start)} to {date_display(med_stop)}, dose {raw_dose:.2f} {cfg['daily_dose_units']}"
                 )
@@ -1044,14 +1053,14 @@ def calculate_all_results():
     # --------------------------------------------------------
     if st.session_state.get("avacopan_received", "No") == "Yes":
         overall_components.append(0.50)
-        summary_lines.append("- Avacopan: fixed dose 60 mg, ITIS = 0.50")
+        summary_lines.append("- Avacopan: fixed dose 60 mg, score = 0.50")
 
     # --------------------------------------------------------
     # Prednisolone
     # --------------------------------------------------------
     if st.session_state.get("prd_received", "No") == "Yes":
         n_prd_courses = int(st.session_state.get("prd_n_courses", 1))
-        prd_course_itises = []
+        prd_course_scores = []
         prd_summary = []
 
         for i in range(n_prd_courses):
@@ -1076,32 +1085,32 @@ def calculate_all_results():
 
             if not prd_invalid:
                 if encounter_date <= prd_stop:
-                    prd_itis = float(PREDNISOLONE["A_map"][dose_cat])
+                    prd_score = float(PREDNISOLONE["A_map"][dose_cat])
                 else:
                     interval_since_stop = (encounter_date - prd_stop).days
                     if interval_since_stop < 0:
-                        prd_itis = 0.0
+                        prd_score = 0.0
                     else:
                         A = float(PREDNISOLONE["A_map"][dose_cat])
                         d = float(PREDNISOLONE["d_map"][dose_cat])
                         vanish = float(PREDNISOLONE["vanish_map"][dose_cat])
                         n = calculate_n_from_vanish(d, vanish)
-                        prd_itis = float(np.clip(sigmoid_curve(interval_since_stop, A, n, d), 0.0, 1.0))
+                        prd_score = float(np.clip(sigmoid_curve(interval_since_stop, A, n, d), 0.0, 1.0))
 
-                prd_course_itises.append(prd_itis)
+                prd_course_scores.append(prd_score)
                 prd_summary.append(
                     f"course #{i+1}: {date_display(prd_start)} to {date_display(prd_stop)}, dose {dose_cat}"
                 )
             else:
                 prd_summary.append(f"course #{i+1}: excluded due to invalid input(s).")
 
-        if prd_course_itises:
-            overall_components.append(combine_itis(prd_course_itises))
+        if prd_course_scores:
+            overall_components.append(combine_itis(prd_course_scores))
             summary_lines.append("- Prednisolone: " + "; ".join(prd_summary))
         else:
             summary_lines.append("- Prednisolone: no valid course included.")
 
-    cumulative_itis = combine_itis(overall_components)
+    cumulative_score = combine_itis(overall_components)
 
     return {
         "encounter_date": encounter_date,
@@ -1113,7 +1122,7 @@ def calculate_all_results():
         "cd19_tested": cd19_tested,
         "cd19_test_date": cd19_test_date,
         "cd19_value": cd19_value,
-        "cumulative_itis": cumulative_itis,
+        "cumulative_itis": cumulative_score,
         "any_errors": any_errors,
         "summary_lines": summary_lines,
     }
@@ -1122,7 +1131,7 @@ def calculate_all_results():
 # Introduction page
 # ============================================================
 if st.session_state.show_intro_page:
-    st.title("Immunosuppressive Therapy Intensity (ISI) Score ")
+    st.title("Immunosuppressive Therapy Intensity (ISI) Score")
 
     st.write(
         "The Immunosuppressive Therapy Intensity (ISI) Score is derived as part of the "
@@ -1211,7 +1220,7 @@ elif st.session_state.show_result_page and st.session_state.result_payload is no
 # Entry page
 # ============================================================
 else:
-    st.title("Immunosuppressive Therapy Intensity (ISI)  Score")
+    st.title("Immunosuppressive Therapy Intensity (ISI) Score")
 
     st.subheader("Patient details")
     st.caption("Please enter/select dates in DD/MM/YYYY format.")
@@ -1225,9 +1234,13 @@ else:
         format="%.1f",
     )
 
+    encounter_default = st.session_state.get("global_encounter_date", date.today())
+    if encounter_default is None or encounter_default > date.today():
+        encounter_default = date.today()
+
     encounter_input = st.date_input(
         "Date of encounter / current date (DD/MM/YYYY)",
-        value=st.session_state.get("global_encounter_date", date.today()),
+        value=encounter_default,
         min_value=date(1900, 1, 1),
         max_value=date.today(),
         format="DD/MM/YYYY",
@@ -1261,9 +1274,14 @@ else:
     if st.session_state["lymphocyte_tested"] == "Yes":
         c1, c2 = st.columns(2)
         with c1:
+            lymph_default_date = st.session_state.get("lymphocyte_test_date", encounter_date)
+            if lymph_default_date is None or lymph_default_date > encounter_date:
+                lymph_default_date = encounter_date
+
             st.date_input(
                 "Date of test (DD/MM/YYYY)",
-                value=st.session_state.get("lymphocyte_test_date", encounter_date),
+                value=lymph_default_date,
+                min_value=date(1900, 1, 1),
                 max_value=encounter_date,
                 format="DD/MM/YYYY",
                 key="lymphocyte_test_date",
@@ -1292,9 +1310,14 @@ else:
     if st.session_state["cd19_tested"] == "Yes":
         c1, c2 = st.columns(2)
         with c1:
+            cd19_default_date = st.session_state.get("cd19_test_date", encounter_date)
+            if cd19_default_date is None or cd19_default_date > encounter_date:
+                cd19_default_date = encounter_date
+
             st.date_input(
                 "CD19 test date (DD/MM/YYYY)",
-                value=st.session_state.get("cd19_test_date", encounter_date),
+                value=cd19_default_date,
+                min_value=date(1900, 1, 1),
                 max_value=encounter_date,
                 format="DD/MM/YYYY",
                 key="cd19_test_date",
@@ -1351,9 +1374,14 @@ else:
                     key=f"{med_name}_dose_{i}",
                 )
             with c2:
+                iv_default_date = st.session_state.get(f"{med_name}_date_{i}", encounter_date)
+                if iv_default_date is None or iv_default_date > encounter_date:
+                    iv_default_date = encounter_date
+
                 st.date_input(
                     f"IV date #{i+1} (DD/MM/YYYY)",
-                    value=st.session_state.get(f"{med_name}_date_{i}", encounter_date),
+                    value=iv_default_date,
+                    min_value=date(1900, 1, 1),
                     max_value=encounter_date,
                     format="DD/MM/YYYY",
                     key=f"{med_name}_date_{i}",
@@ -1394,9 +1422,14 @@ else:
 
             c1, c2 = st.columns(2)
             with c1:
+                oral_start_default = st.session_state.get(f"oral_cyc_start_{i}", encounter_date)
+                if oral_start_default is None or oral_start_default > encounter_date:
+                    oral_start_default = encounter_date
+
                 st.date_input(
                     f"Start date #{i+1} (DD/MM/YYYY)",
-                    value=st.session_state.get(f"oral_cyc_start_{i}", encounter_date),
+                    value=oral_start_default,
+                    min_value=date(1900, 1, 1),
                     max_value=encounter_date,
                     format="DD/MM/YYYY",
                     key=f"oral_cyc_start_{i}",
@@ -1413,14 +1446,21 @@ else:
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
                         value=encounter_date,
+                        min_value=date(1900, 1, 1),
+                        max_value=encounter_date,
                         disabled=True,
                         format="DD/MM/YYYY",
                         key=f"oral_cyc_stop_disabled_{i}",
                     )
                 else:
+                    oral_stop_default = st.session_state.get(f"oral_cyc_stop_{i}", encounter_date)
+                    if oral_stop_default is None or oral_stop_default > encounter_date:
+                        oral_stop_default = encounter_date
+
                     st.date_input(
                         f"Stop date #{i+1} (DD/MM/YYYY)",
-                        value=st.session_state.get(f"oral_cyc_stop_{i}", encounter_date),
+                        value=oral_stop_default,
+                        min_value=date(1900, 1, 1),
                         max_value=encounter_date,
                         format="DD/MM/YYYY",
                         key=f"oral_cyc_stop_{i}",
@@ -1522,7 +1562,7 @@ else:
         key="avacopan_received",
     )
     if st.session_state["avacopan_received"] == "Yes":
-        st.caption("Fixed dose 60 mg; fixed ITIS score 0.50.")
+        st.caption("Fixed dose 60 mg; fixed ISI score 0.50.")
     else:
         st.caption("Not included (not received).")
 
