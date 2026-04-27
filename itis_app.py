@@ -291,7 +291,7 @@ MEDS_IV = {
         "default_step": 50,
         "default_dose": 250,
         "age_adjustment_type": "relative",
-        "lymphocyte_adjustment_type": "relative",
+        "lymphocyte_adjustment_type": "none",
     },
     "Rituximab": {
         "dose1": 500, "dose2": 2000,
@@ -306,7 +306,7 @@ MEDS_IV = {
         "default_step": 100,
         "default_dose": 500,
         "age_adjustment_type": "relative",
-        "lymphocyte_adjustment_type": "relative",
+        "lymphocyte_adjustment_type": "none",
     },
     "Cyclophosphamide (IV)": {
         "dose1": 150, "dose2": 8000,
